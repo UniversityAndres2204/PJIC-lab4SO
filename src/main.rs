@@ -1,5 +1,3 @@
-use std::collections::{HashSet, VecDeque};
-
 fn main() {
     const QUANTUM: u32 = 100;
     const SWITCH_TIME: u32 = 10;
@@ -95,7 +93,6 @@ struct GanttEvent {
 fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> RoundRobinResult {
     let mut current_time: u32 = 0;
     let mut queue_history: Vec<usize> = vec![];
-    let mut queue: VecDeque<usize> = VecDeque::new();
     let mut gantt_chart: Vec<GanttEvent> = Vec::new(); // Eventos del diagrama de Gantt
 
     while processes.iter().any(|p| p.cpu_index < p.cpu_durations.len()) {
@@ -123,7 +120,7 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
 
         gantt_chart.push(GanttEvent {
             start_time: current_time,
-            end_time: current_time + burst_time as u32,
+            end_time: current_time + burst_time,
             process_id: Some(p.id),
             is_switch: false,
         });
@@ -142,13 +139,19 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
                 p.finish_time = Some(current_time);
             }
         }
+
+        gantt_chart.push(GanttEvent {
+            start_time: current_time,
+            end_time: current_time + switch_time,
+            process_id: None,
+            is_switch: true,
+        });
         current_time += switch_time;
     }
 
-
     for proc in processes.iter_mut() {
         let finish = proc.finish_time.unwrap_or(current_time);
-        proc.turn_around_time = finish - proc.io_durations.iter().sum::<u32>() -proc.arrival;
+        proc.turn_around_time = finish - proc.io_durations.iter().sum::<u32>() - proc.arrival;
         proc.waiting_time = proc.first_time_cpu.unwrap() - proc.arrival;
     }
 
@@ -164,10 +167,9 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
         average_waiting_time: avg_wait,
         average_turn_around_time: avg_turn,
         queue_history,
-        gantt_chart
+        gantt_chart,
     }
 }
-
 
 fn print_gantt_chart(gantt_chart: &[GanttEvent]) {
     println!("\nDiagrama de Gantt:");
@@ -226,7 +228,7 @@ fn print_gantt_line(events: &[&GanttEvent]) {
             print!("+------+");
         }
     }
-    println!();
+    print!("+\n");
 
     // Imprimir línea de procesos
     print!("        ");
@@ -236,8 +238,9 @@ fn print_gantt_line(events: &[&GanttEvent]) {
         } else {
             print!("|  P{}  ", event.process_id.unwrap());
         }
+
     }
-    println!();
+    print!("|\n");
 
     // Imprimir línea de separación inferior
     print!("        ");
@@ -248,6 +251,5 @@ fn print_gantt_line(events: &[&GanttEvent]) {
             print!("+------+");
         }
     }
-    println!();
-    println!(); // Línea en blanco entre secciones
+    print!("+\n\n");
 }
