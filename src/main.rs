@@ -1,5 +1,3 @@
-mod old;
-
 use std::collections::{HashSet, VecDeque};
 
 fn main() {
@@ -146,6 +144,7 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
         }
         current_time += switch_time;
     }
+
 
     for proc in processes.iter_mut() {
         let finish = proc.finish_time.unwrap_or(current_time);
