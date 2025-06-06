@@ -210,7 +210,7 @@ fn print_gantt_chart(gantt_chart: &[GanttEvent]) {
     let mut line_events: Vec<&GanttEvent> = Vec::new();
     
     for event in gantt_chart {
-        let event_width = if event.is_switch { 5 } else { 6 }; // "| SW |" vs "| P0 |"
+        let event_width = if event.is_switch { 5 } else { 6 }; // "| SW |" vs "| P |"
         
         // Si no cabe en la línea actual, imprimir la línea y empezar una nueva
         if current_pos + event_width > MAX_WIDTH && !line_events.is_empty() {
@@ -227,6 +227,7 @@ fn print_gantt_chart(gantt_chart: &[GanttEvent]) {
     if !line_events.is_empty() {
         print_gantt_line(&line_events);
     }
+    println!("SW es el tiempo de intercambio");
 }
 
 fn print_gantt_line(events: &[&GanttEvent]) {
@@ -270,7 +271,7 @@ fn print_gantt_line(events: &[&GanttEvent]) {
             print!("|  P{}  ", event.process_id.unwrap());
         }
     }
-    println!();
+    println!("|");
     
     // Imprimir línea de separación inferior
     print!("        ");
