@@ -26,6 +26,13 @@ fn main() {
     println!("\nPromedio espera: {:.2}", res.average_waiting_time);
     println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
     println!("Tiempo total de CPU: {}", res.total_time);
+    
+    println!("\nCola de procesos en estado listo:");
+    // Mostrar historial de la cola de procesos
+    for pid in &res.execution_history {
+        print!("P{} ", pid);
+    }
+    println!();
 }
 
 #[derive(Clone, Default, Debug)]
@@ -40,13 +47,6 @@ struct Process {
     finish_time: Option<u32>,
     waiting_time: u32,
     turn_around_time: u32
-}
-
-#[derive(Debug)]
-struct GanttEvent {
-    pid: usize,
-    start: u32,
-    end: u32,
 }
 
 impl Process {
@@ -77,68 +77,7 @@ struct RoundRobinResult {
     total_time: usize,
     average_waiting_time: f32,
     average_turn_around_time: f32,
-    gantt_events: Vec<GanttEvent>,
-}
-
-fn print_gantt_diagram(gantt: &[GanttEvent], switch_time: u32) {
-    println!("\nDiagrama de Gantt:");
-    
-    // Calcular el ancho total necesario
-    let total_width = gantt.iter().map(|e| (e.end - e.start) as usize).sum::<usize>();
-    let scale_factor = if total_width > 80 { 80.0 / total_width as f64 } else { 1.0 };
-    
-    // Línea de tiempo superior
-    print!("0");
-    for event in gantt {
-        let width = ((event.end - event.start) as f64 * scale_factor).max(1.0) as usize;
-        let padding = if width >= 8 { width - 4 } else { 4 };
-        print!("{:>width$}", event.end, width = padding);
-    }
-    println!();
-    
-    // Línea superior del diagrama
-
-    for event in gantt {
-        let width = ((event.end - event.start) as f64 * scale_factor).max(1.0) as usize;
-        print!("+{:-<width$}", "", width = width.saturating_sub(1));
-    }
-    println!("+");
-    
-    // Línea de procesos
-
-    for event in gantt {
-        let width = ((event.end - event.start) as f64 * scale_factor).max(1.0) as usize;
-        let label = if event.pid == usize::MAX {
-            "SW".to_string()
-        } else {
-            format!("P{}", event.pid)
-        };
-        
-        if width >= label.len() + 2 {
-            let padding = (width - label.len()) / 2;
-            print!("|{:>pad$}{:<pad2$}", label, "", pad = padding, pad2 = width - padding - label.len());
-        } else {
-            print!("|{:<width$}", label.chars().take(width.saturating_sub(1)).collect::<String>(), width = width.saturating_sub(1));
-        }
-    }
-    println!("|");
-    
-    // Línea inferior del diagrama
-
-    for event in gantt {
-        let width = ((event.end - event.start) as f64 * scale_factor).max(1.0) as usize;
-        print!("+{:-<width$}", "", width = width.saturating_sub(1));
-    }
-    println!("+");
-    
-    // Leyenda
-    println!("\nLeyenda:");
-    println!("  P# = Proceso # ejecutándose");
-    println!("  SW = Context Switch (Intercambio entre procesos)");
-    println!("\nExplicación:");
-    println!("- Cada vez que un proceso agota su quantum o completa su ráfaga,");
-    println!("  ocurre un context switch (SW) antes del siguiente proceso.");
-    println!("- El context switch toma {} unidades de tiempo.", switch_time);
+    execution_history: Vec<usize>, // Historial de IDs de procesos
 }
 
 fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u32) -> RoundRobinResult {
@@ -147,22 +86,27 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
     let mut queue = VecDeque::new();
     let mut io_queue: Vec<(usize, u32)> = Vec::new();
     let mut ready_processes: HashSet<usize> = HashSet::new();
-    let mut gantt: Vec<GanttEvent> = Vec::new();
+    let mut saved_queue: VecDeque<usize> = VecDeque::new(); // Historial de la cola
+
+    let mut total_turn_around_time = 0;
+    let mut total_waiting_time = 0;
 
     while queue.len() > 0 || ready_processes.len() < processes.len() || !io_queue.is_empty() {
-        // Agregar procesos que llegan
+        // Agregar procesos que llegan en este momento
         for (i, process) in processes.iter_mut().enumerate() {
             if process.arrival <= current_time && !ready_processes.contains(&i) {
                 queue.push_back(i);
+                saved_queue.push_back(i); // Guardar en el historial
                 ready_processes.insert(i);
             }
         }
 
-        // Procesar I/O completado
+        // Agregar procesos que terminan I/O
         let mut finished_io = vec![];
         for (i, &(pid, end_io)) in io_queue.iter().enumerate() {
             if current_time >= end_io {
                 queue.push_back(pid);
+                saved_queue.push_back(pid); // Guardar en el historial
                 finished_io.push(i);
             }
         }
@@ -184,51 +128,27 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
         }
 
         let burst_time = quantum.min(process.remaining_burst_time as usize);
-        let start_time = current_time;
         process.remaining_burst_time -= burst_time as u32;
         current_time += burst_time as u32;
-        
-        // Registrar evento de CPU
-        gantt.push(GanttEvent {
-            pid,
-            start: start_time,
-            end: current_time,
-        });
-
-        // Siempre agregar context switch después de cada ráfaga de CPU (excepto al final)
-        let is_last_execution = queue.is_empty() && io_queue.is_empty() && 
-                               (process.remaining_burst_time == 0 && process.finished());
-        
-        if !is_last_execution && switch_time > 0 {
-            gantt.push(GanttEvent {
-                pid: usize::MAX, // Context switch
-                start: current_time,
-                end: current_time + switch_time,
-            });
-            current_time += switch_time;
-        }
+        current_time += switch_time;
 
         if process.remaining_burst_time == 0 {
-            // El proceso ha completado su ráfaga actual
             process.io_fase += 1;
             if process.finished() {
-                // El proceso ha terminado completamente
                 process.finish_time = Some(current_time);
                 process.turn_around_time = current_time - process.arrival;
                 process.waiting_time = process.turn_around_time - process.ncpu_fases.iter().sum::<u32>() - process.io_time.iter().sum::<u32>();
             } else {
-                // El proceso va a I/O
                 let io_time = process.io_time[process.io_fase-1];
                 process.remaining_burst_time = process.ncpu_fases[process.io_fase];
                 io_queue.push((pid, current_time + io_time));
             }
         } else {
-            // El proceso fue interrumpido por el quantum, vuelve a la cola
             queue.push_back(pid);
+            saved_queue.push_back(pid); // Guardar cuando regresa a la cola
         }
     }
 
-    // Calcular estadísticas finales
     for proc in &mut processes {
         let finish = proc.finish_time.unwrap_or(current_time);
         proc.turn_around_time = finish - proc.arrival;
@@ -240,14 +160,14 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
     let avg_wait = processes.iter().map(|p| p.waiting_time).sum::<u32>() as f32 / processes.len() as f32;
     let avg_turn = processes.iter().map(|p| p.turn_around_time).sum::<u32>() as f32 / processes.len() as f32;
 
-    // Mostrar el diagrama de Gantt mejorado
-    print_gantt_diagram(&gantt, switch_time);
+    // Convertir saved_queue a Vec para el resultado
+    let execution_history: Vec<usize> = saved_queue.into_iter().collect();
 
     RoundRobinResult {
         processes,
         total_time: total_time as usize,
         average_waiting_time: avg_wait,
         average_turn_around_time: avg_turn,
-        gantt_events: gantt,
+        execution_history, // Incluir el historial como Vec<usize>
     }
 }
