@@ -27,12 +27,11 @@ fn main() {
     println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
     println!("Tiempo total de CPU: {}", res.total_time);
     
-    println!("\nCola de procesos en estado listo:");
     // Mostrar historial de la cola de procesos
-    for pid in &res.execution_history {
-        print!("P{} ", pid);
-    }
-    println!();
+    println!("{:?}", res.execution_history);
+    
+    // Mostrar diagrama de Gantt
+    print_gantt_chart(&res.gantt_chart);
 }
 
 #[derive(Clone, Default, Debug)]
@@ -78,6 +77,15 @@ struct RoundRobinResult {
     average_waiting_time: f32,
     average_turn_around_time: f32,
     execution_history: Vec<usize>, // Historial de IDs de procesos
+    gantt_chart: Vec<GanttEvent>, // Eventos para el diagrama de Gantt
+}
+
+#[derive(Debug, Clone)]
+struct GanttEvent {
+    start_time: u32,
+    end_time: u32,
+    process_id: Option<usize>, // None para tiempos de intercambio
+    is_switch: bool,
 }
 
 fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u32) -> RoundRobinResult {
@@ -87,6 +95,7 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
     let mut io_queue: Vec<(usize, u32)> = Vec::new();
     let mut ready_processes: HashSet<usize> = HashSet::new();
     let mut saved_queue: VecDeque<usize> = VecDeque::new(); // Historial de la cola
+    let mut gantt_chart: Vec<GanttEvent> = Vec::new(); // Eventos del diagrama de Gantt
 
     let mut total_turn_around_time = 0;
     let mut total_waiting_time = 0;
@@ -129,7 +138,27 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
 
         let burst_time = quantum.min(process.remaining_burst_time as usize);
         process.remaining_burst_time -= burst_time as u32;
+        
+        // Agregar evento de ejecución del proceso
+        gantt_chart.push(GanttEvent {
+            start_time: current_time,
+            end_time: current_time + burst_time as u32,
+            process_id: Some(pid),
+            is_switch: false,
+        });
+        
         current_time += burst_time as u32;
+
+        // Agregar evento de intercambio si no es el último proceso
+        if switch_time > 0 && (queue.len() > 0 || process.remaining_burst_time > 0) {
+            gantt_chart.push(GanttEvent {
+                start_time: current_time,
+                end_time: current_time + switch_time,
+                process_id: None,
+                is_switch: true,
+            });
+        }
+        
         current_time += switch_time;
 
         if process.remaining_burst_time == 0 {
@@ -169,5 +198,89 @@ fn rust_round_robin(mut processes: Vec<Process>, quantum: usize, switch_time: u3
         average_waiting_time: avg_wait,
         average_turn_around_time: avg_turn,
         execution_history, // Incluir el historial como Vec<usize>
+        gantt_chart, // Incluir el diagrama de Gantt
     }
+}
+
+fn print_gantt_chart(gantt_chart: &[GanttEvent]) {
+    println!("\nDiagrama de Gantt:");
+    
+    const MAX_WIDTH: usize = 80; // Ancho máximo de la terminal
+    let mut current_pos = 0;
+    let mut line_events: Vec<&GanttEvent> = Vec::new();
+    
+    for event in gantt_chart {
+        let event_width = if event.is_switch { 5 } else { 6 }; // "| SW |" vs "| P0 |"
+        
+        // Si no cabe en la línea actual, imprimir la línea y empezar una nueva
+        if current_pos + event_width > MAX_WIDTH && !line_events.is_empty() {
+            print_gantt_line(&line_events);
+            line_events.clear();
+            current_pos = 0;
+        }
+        
+        line_events.push(event);
+        current_pos += event_width;
+    }
+    
+    // Imprimir la última línea si queda algo
+    if !line_events.is_empty() {
+        print_gantt_line(&line_events);
+    }
+}
+
+fn print_gantt_line(events: &[&GanttEvent]) {
+    if events.is_empty() {
+        return;
+    }
+    
+    // Imprimir línea de tiempos
+    print!("Tiempo:");
+    for event in events {
+        print!("{:>4}", event.start_time);
+        if event.is_switch {
+            print!(" ");
+        } else {
+            print!("   ");
+        }
+    }
+    // Imprimir el tiempo final del último evento
+    if let Some(last_event) = events.last() {
+        print!("{:>5}", last_event.end_time);
+    }
+    println!();
+    
+    // Imprimir línea de separación superior
+    print!("        ");
+    for event in events {
+        if event.is_switch {
+            print!("----");
+        } else {
+            print!("+------+");
+        }
+    }
+    println!();
+    
+    // Imprimir línea de procesos
+    print!("        ");
+    for event in events {
+        if event.is_switch {
+            print!("| SW ");
+        } else {
+            print!("|  P{}  ", event.process_id.unwrap());
+        }
+    }
+    println!();
+    
+    // Imprimir línea de separación inferior
+    print!("        ");
+    for event in events {
+        if event.is_switch {
+            print!("----");
+        } else {
+            print!("+------+");
+        }
+    }
+    println!();
+    println!(); // Línea en blanco entre secciones
 }
