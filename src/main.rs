@@ -1,3 +1,5 @@
+use std::io;
+use std::io::Write;
 use std::process::exit;
 use serde::Deserialize;
 
@@ -66,17 +68,43 @@ struct GanttEvent {
 }
 
 fn main() {
-    let mut processes = extract_json_processes();
+
+    println!("--- MENÚ DE PROCESOS ---");
+    println!("1. Ingresar procesos manualmente");
+    println!("2. Cargar procesos desde JSON");
+    println!("3. Salir");
+    print!("Seleccione una opción: ");
+    io::stdout().flush().unwrap();
+
+    let mut option = String::new();
+    io::stdin().read_line(&mut option).unwrap();
+    let option = option.trim();
+
+    let mut processes = match option {
+        "1" => input_processes_from_console(),
+        "2" => extract_json_processes(),
+        "3" => {
+            println!("Saliendo...");
+            exit(0);
+        }
+        _ => {
+            println!("Opción inválida.");
+            exit(1);
+        }
+    };
+
+    println!("\nProcesos cargados: ");
     print_process_table(&mut processes);
     let res = round_robin(&mut processes);
-    
+
+    println!("\nResultados del Round robin: ");
     println!(
-        "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
-        "Proceso", "Llegada", "Finish", "Primera CPU", "T. Espera", "T. Vuelta"
+        "{:<10} |{:<10} |{:<10} |{:<12} |{:<10} |{:<10}",
+        "Proceso", "Llegada (ms)", "Finish time", "Primera CPU", "T. Espera", "T. Vuelta"
     );
     for p in &res.processes {
         println!(
-            "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
+            "{:<10} |{:<10} |{:<10} |{:<12} |{:<10} |{:<10}",
             p.id,
             p.arrival,
             p.finish_time.unwrap_or(0),
@@ -324,7 +352,7 @@ fn extract_json_processes() -> Vec<Process> {
         exit(101)
     });
     let mut processes: Vec<Process> = Vec::new();
-    for (id, mut entry) in data.into_iter().enumerate() {
+    for (id, entry) in data.into_iter().enumerate() {
         let cpu: Vec<u32> = entry.cpu_durations.iter().map(|d| d*QUANTUM).collect();
         let io: Vec<u32> = entry.io_durations.iter().map(|d| d*QUANTUM).collect();
         processes.push(Process::new(
@@ -332,6 +360,57 @@ fn extract_json_processes() -> Vec<Process> {
             entry.arrival,
             cpu,
             io
+        ));
+    }
+    processes
+}
+
+fn input_processes_from_console() -> Vec<Process> {
+    let mut processes = Vec::new();
+    let mut input = String::new();
+
+    print!("¿Cuántos procesos desea ingresar?: ");
+    io::stdout().flush().unwrap();
+    io::stdin().read_line(&mut input).unwrap();
+    let num_processes: usize = input.trim().parse().unwrap_or(0);
+    input.clear();
+
+    for i in 0..num_processes {
+        println!("\nProceso P{}:", i);
+
+        print!("  Tiempo de llegada (ms): ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut input).unwrap();
+        let arrival = input.trim().parse().unwrap_or(0);
+        input.clear();
+
+        print!("  Numero de CPU (separadas por espacios): ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut input).unwrap();
+        let cpu_durations = input
+            .trim()
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .map(|s: u32| s*QUANTUM)
+            .collect();
+        input.clear();
+
+        print!("  Numero de E/S (separadas por espacios): ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut input).unwrap();
+        let io_durations = input
+            .trim()
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .map(|s: u32| s*QUANTUM)
+            .collect();
+        input.clear();
+
+        processes.push(Process::new(
+            i,
+            arrival,
+            cpu_durations,
+            io_durations,
         ));
     }
     processes
