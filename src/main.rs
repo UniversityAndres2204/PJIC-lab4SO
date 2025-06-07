@@ -10,7 +10,7 @@ fn main() {
 
     let res = round_robin(&mut processes, QUANTUM, SWITCH_TIME);
 
-    println!("Queue: {:?}", res.queue_history);
+    
     println!(
         "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
         "Proceso", "Llegada", "Finish", "Primera CPU", "T. Espera", "T. Vuelta"
@@ -27,9 +27,16 @@ fn main() {
         );
     }
 
+
     println!("\nPromedio espera: {:.2}", res.average_waiting_time);
     println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
     println!("Tiempo total de CPU: {}", res.total_time);
+    println!("Cola de procesos en estado listo: {:?}", 
+        res.queue_history.iter()
+            .map(|&id| format!("P{}", id))
+            .collect::<Vec<String>>()
+    );
+    println!();
     print_gantt_chart(&res.gantt_chart);
 }
 
@@ -140,13 +147,16 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
             }
         }
 
-        gantt_chart.push(GanttEvent {
-            start_time: current_time,
-            end_time: current_time + switch_time,
-            process_id: None,
-            is_switch: true,
-        });
-        current_time += switch_time;
+        // Solo agregar switch si no es el último proceso
+        if processes.iter().any(|p| p.cpu_index < p.cpu_durations.len()) {
+            gantt_chart.push(GanttEvent {
+                start_time: current_time,
+                end_time: current_time + switch_time,
+                process_id: None,
+                is_switch: true,
+            });
+            current_time += switch_time;
+        }
     }
 
     for proc in processes.iter_mut() {
