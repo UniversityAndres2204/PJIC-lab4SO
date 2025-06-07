@@ -69,7 +69,7 @@ fn main() {
     let mut processes = extract_json_processes();
     print_process_table(&mut processes);
     let res = round_robin(&mut processes);
-    println!("\nQueue: {:?}", res.queue_history);
+    
     println!(
         "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
         "Proceso", "Llegada", "Finish", "Primera CPU", "T. Espera", "T. Vuelta"
@@ -89,6 +89,12 @@ fn main() {
     println!("\nPromedio espera: {:.2}", res.average_waiting_time);
     println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
     println!("Tiempo total de CPU: {}", res.total_time);
+    println!("Cola de procesos en estado listo: {:?}", 
+        res.queue_history.iter()
+            .map(|&id| format!("P{}", id))
+            .collect::<Vec<String>>()
+    );
+    println!();
     print_gantt_chart(&res.gantt_chart);
 }
 
