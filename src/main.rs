@@ -1,44 +1,8 @@
-fn main() {
-    const QUANTUM: u32 = 100;
-    const SWITCH_TIME: u32 = 10;
-    // TODO: convert To quantum's
-    let mut processes = vec![
-        Process::new(0, 0, vec![200, 100, 300], vec![200, 200]),
-        Process::new(1, 80, vec![300, 200], vec![200]),
-        Process::new(2, 140, vec![500], vec![]),
-    ];
+use std::process::exit;
+use serde::Deserialize;
 
-    let res = round_robin(&mut processes, QUANTUM, SWITCH_TIME);
-
-    
-    println!(
-        "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
-        "Proceso", "Llegada", "Finish", "Primera CPU", "T. Espera", "T. Vuelta"
-    );
-    for p in &res.processes {
-        println!(
-            "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
-            p.id,
-            p.arrival,
-            p.finish_time.unwrap_or(0),
-            p.first_time_cpu.unwrap_or(0),
-            p.waiting_time,
-            p.turn_around_time
-        );
-    }
-
-
-    println!("\nPromedio espera: {:.2}", res.average_waiting_time);
-    println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
-    println!("Tiempo total de CPU: {}", res.total_time);
-    println!("Cola de procesos en estado listo: {:?}", 
-        res.queue_history.iter()
-            .map(|&id| format!("P{}", id))
-            .collect::<Vec<String>>()
-    );
-    println!();
-    print_gantt_chart(&res.gantt_chart);
-}
+const QUANTUM: u32 = 100;
+const SWITCH_TIME: u32 = 10;
 
 #[derive(Clone, Default, Debug)]
 struct Process {
@@ -74,10 +38,13 @@ impl Process {
             turn_around_time: 0,
         }
     }
+}
 
-    fn finished(&self) -> bool {
-        self.io_index >= self.cpu_durations.len()
-    }
+#[derive(Clone, Default, Debug, Deserialize)]
+struct ProcessEntry {
+    arrival: u32,
+    cpu_durations: Vec<u32>,
+    io_durations: Vec<u32>
 }
 
 #[derive(Debug)]
@@ -97,7 +64,37 @@ struct GanttEvent {
     process_id: Option<usize>, // None para tiempos de intercambio
     is_switch: bool,
 }
-fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> RoundRobinResult {
+
+fn main() {
+    let mut processes = extract_json_processes();
+    print_process_table(&mut processes);
+    let res = round_robin(&mut processes);
+    println!("\nQueue: {:?}", res.queue_history);
+    println!(
+        "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
+        "Proceso", "Llegada", "Finish", "Primera CPU", "T. Espera", "T. Vuelta"
+    );
+    for p in &res.processes {
+        println!(
+            "{:>10} |{:>10} |{:>10} |{:>12} |{:>10} |{:>10}",
+            p.id,
+            p.arrival,
+            p.finish_time.unwrap_or(0),
+            p.first_time_cpu.unwrap_or(0),
+            p.waiting_time,
+            p.turn_around_time
+        );
+    }
+
+    println!("\nPromedio espera: {:.2}", res.average_waiting_time);
+    println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
+    println!("Tiempo total de CPU: {}", res.total_time);
+    print_gantt_chart(&res.gantt_chart);
+}
+
+fn round_robin(processes: &mut Vec<Process>) -> RoundRobinResult {
+    let quantum = QUANTUM;
+    let switch_time = SWITCH_TIME;
     let mut current_time: u32 = 0;
     let mut queue_history: Vec<usize> = vec![];
     let mut gantt_chart: Vec<GanttEvent> = Vec::new(); // Eventos del diagrama de Gantt
@@ -147,7 +144,6 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
             }
         }
 
-        // Solo agregar switch si no es el último proceso
         if processes.iter().any(|p| p.cpu_index < p.cpu_durations.len()) {
             gantt_chart.push(GanttEvent {
                 start_time: current_time,
@@ -155,8 +151,8 @@ fn round_robin(processes: &mut Vec<Process>, quantum: u32, switch_time: u32) -> 
                 process_id: None,
                 is_switch: true,
             });
-            current_time += switch_time;
         }
+        current_time += switch_time;
     }
 
     for proc in processes.iter_mut() {
@@ -231,14 +227,15 @@ fn print_gantt_line(events: &[&GanttEvent]) {
 
     // Imprimir línea de separación superior
     print!("        ");
-    for event in events {
+    for (i, event) in events.iter().enumerate() {
         if event.is_switch {
             print!("----");
         } else {
             print!("+------+");
         }
+        if i == events.len() - 1 && event.is_switch { print!("+"); }
     }
-    print!("+\n");
+    println!();
 
     // Imprimir línea de procesos
     print!("        ");
@@ -248,18 +245,87 @@ fn print_gantt_line(events: &[&GanttEvent]) {
         } else {
             print!("|  P{}  ", event.process_id.unwrap());
         }
-
     }
     print!("|\n");
 
     // Imprimir línea de separación inferior
     print!("        ");
-    for event in events {
+    for (i, event) in events.iter().enumerate() {
         if event.is_switch {
             print!("----");
         } else {
             print!("+------+");
         }
+        if i == events.len() - 1 && event.is_switch { print!("+"); }
     }
-    print!("+\n\n");
+    print!("\n\n");
+}
+
+fn print_process_table(processes: &[Process]) {
+    // Calcular cuántas ráfagas máximas hay por proceso
+    let max_steps = processes
+        .iter()
+        .map(|p| p.cpu_durations.len() + p.io_durations.len())
+        .max()
+        .unwrap_or(0);
+
+    // Encabezado
+    print!("{:<8} {:<15}", "Proceso", "Llegada (ms)");
+    for i in 0..max_steps {
+        if i % 2 == 0 {
+            print!(" {:<15}", "CPU (quantums)");
+        } else {
+            print!(" {:<15}", "I/O (quantums)");
+        }
+    }
+    println!();
+
+    // Filas por proceso
+    for p in processes {
+        print!("{:<8} {:<15}", format!("P{}", p.id), p.arrival);
+
+        let mut cpu_i = 0;
+        let mut io_i = 0;
+
+        for i in 0..max_steps {
+            if i % 2 == 0 {
+                // CPU
+                if let Some(cpu) = p.cpu_durations.get(cpu_i) {
+                    print!(" {:<15}", cpu/QUANTUM);
+                    cpu_i += 1;
+                } else {
+                    print!(" {:<15}", "-");
+                }
+            } else {
+                // I/O
+                if let Some(io) = p.io_durations.get(io_i) {
+                    print!(" {:<15}", io/QUANTUM);
+                    io_i += 1;
+                } else {
+                    print!(" {:<15}", "-");
+                }
+            }
+        }
+
+        println!();
+    }
+}
+
+fn extract_json_processes() -> Vec<Process> {
+    let data: Vec<ProcessEntry> = serde_json::from_str(include_str!("processes.json")).unwrap_or_else(|e| {
+        println!("{}", e);
+        exit(101)
+    });
+    let mut processes: Vec<Process> = Vec::new();
+    for (id, mut entry) in data.into_iter().enumerate() {
+        let cpu: Vec<u32> = entry.cpu_durations.iter().map(|d| d*QUANTUM).collect();
+        let io: Vec<u32> = entry.io_durations.iter().map(|d| d*QUANTUM).collect();
+        processes.push(Process::new(
+            id,
+            entry.arrival,
+            cpu,
+            io
+        ));
+    }
+    processes
 }

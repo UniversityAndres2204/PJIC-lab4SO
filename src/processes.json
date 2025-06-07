@@ -1,0 +1,17 @@
+[
+  {
+    "arrival": 0,
+    "cpu_durations": [2, 1, 3],
+    "io_durations": [2, 2]
+  },
+  {
+    "arrival": 80,
+    "cpu_durations": [3, 2],
+    "io_durations": [2]
+  },
+  {
+    "arrival": 140,
+    "cpu_durations": [5],
+    "io_durations": []
+  }
+]
