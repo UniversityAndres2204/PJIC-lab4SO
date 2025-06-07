@@ -1,8 +1,8 @@
 use std::process::exit;
 use serde::Deserialize;
 
-const QUANTUM: u32 = 100;
-const SWITCH_TIME: u32 = 10;
+const QUANTUM: u32 = 25;
+const SWITCH_TIME: u32 = 5;
 
 #[derive(Clone, Default, Debug)]
 struct Process {
@@ -10,8 +10,8 @@ struct Process {
     arrival: u32,
     cpu_durations: Vec<u32>,
     cpu_index: usize,
-    io_durations: Vec<u32>, // io duration
-    io_index: usize,    // current io fase
+    io_durations: Vec<u32>, 
+    io_index: usize,    
     next_ready_time: u32,
     remaining_burst_time: u32,
     first_time_cpu: Option<u32>,
@@ -89,7 +89,8 @@ fn main() {
     println!("\nPromedio espera: {:.2}", res.average_waiting_time);
     println!("Promedio vuelta: {:.2}", res.average_turn_around_time);
     println!("Tiempo total de CPU: {}", res.total_time);
-    println!("Cola de procesos en estado listo: {:?}", 
+    println!("Cola de procesos en estado listo: ");
+    println!("{:?}", 
         res.queue_history.iter()
             .map(|&id| format!("P{}", id))
             .collect::<Vec<String>>()
